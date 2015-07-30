@@ -55,41 +55,84 @@ LOOP:
 ;VRAMから近傍のセルの状態を確認し、保存メモリをアップデート
 UPDATE  PROC    NEAR
         push    ax
+        push    bx
         push    cx
+        push    dx
         push    si
         push    di
 
-        mov     si, 0 ;vramのオフセット
+        mov     si, 0 ;VRAMのオフセット
         mov     di, 0 ;保存メモリのオフセット
 
-        ;近傍の状態をVRAMから読み込み、正の数をカウント
+        ;例外を判定してオフセットの配列を作成
+CHECK:
+        mov     bx, 7e0h ;オフセットの配列の先頭
+        mov     WORD PTR es:[bx], -162
+        mov     WORD PTR es:[bx+2], -160
+        mov     WORD PTR es:[bx+4], -158
+        mov     WORD PTR es:[bx+6], -2
+        mov     WORD PTR es:[bx+8], 2
+        mov     WORD PTR es:[bx+10], 158
+        mov     WORD PTR es:[bx+12], 160
+        mov     WORD PTR es:[bx+14], 162
+
+        mov     cx, 0 ;近傍の合計カウンタの初期化
 CKTOP:
-        mov     cx, 0 ;カウンタの初期化
-        ;上 左中右確認
-        cmp     di, 80
-        jb      CKMID
-        mov     al, [si-162]
-        add     cl, al
-        mov     al, [si-160]
-        add     cl, al
-        mov     al, [si-158]
-        add     cl, al
-CKMID:
-        ;左右確認
-        mov     al, [si-2]
-        add     cl, al
-        mov     al, [si+2]
-        add     cl, al
+        ;上端であるかの確認
+        cmp     di, 79 ;diには対象の文字数
+        ja      CKBTM
+        mov     WORD PTR es:[bx], 3838
+        mov     WORD PTR es:[bx+2], 3840
+        mov     WORD PTR es:[bx+4], 3842
+        jmp     CKLFT
 CKBTM:
-        ;下 左中右確認
-        cmp     di, 1919
-        ja      CALC
-        mov     al, [si+158]
-        add     cl, al
-        mov     al, [si+160]
-        add     cl, al
-        mov     al, [si+162]
-        add     cl, al
+        ;下端であるかの確認
+        cmp     di, 1920
+        jb      CKLFT
+        sub     WORD PTR es:[bx+10], 4000
+        sub     WORD PTR es:[bx+12], 4000
+        sub     WORD PTR es:[bx+14], 4000
+CKLFT:
+        ;左端であるかの確認
+        push    bx
+        mov     ax, di
+        mov     dx, 0
+        mov     bx, 80
+        div     bx
+        pop     bx
+        cmp     dx, 0 ;割り切れていれば左端
+        jnz     CKRGT
+        add     WORD PTR es:[bx], 160
+        add     WORD PTR es:[bx+6], 160
+        add     WORD PTR es:[bx+10], 160
+        jmp     COUNT
+CKRGT:
+        ;右端であるかの確認
+        push    bx
+        mov     ax, di
+        mov     dx, 0
+        mov     bx, 80
+        div     bx
+        pop     bx
+        cmp     dx, 79 ;余り79で右端
+        jne     COUNT
+        sub     WORD PTR es:[bx+4], 160
+        sub     WORD PTR es:[bx+8], 160
+        sub     WORD PTR es:[bx+14], 160
+COUNT:
+        ;VRAMを参照して、「生」のセルをカウント
+        push    si ;対象のオフセットアドレスを退避
+        add     si, es:[bx] ;近傍のオフセットアドレスを加算
+        add     cl, [si] ;VRAMを参照して状態を加算
+        inc     bx ;オフセットアドレスの配列は
+        inc     bx ;16bitごと
+        pop     si ;対象のオフセットアドレスを取り出す
+        cmp     bx, 7efh
+        jb      COUNT
+
+        jmp     CALC
+JUMPP:
+        jmp     CHECK
 
         ;カウンターの値によって保存メモリの値を更新
 CALC:
@@ -113,12 +156,15 @@ CALCEND:
         inc     si
         ;全セル完了したら終了
         cmp     di,7d0h
-        jne     CKTOP
 
-        pop    di
-        pop    si
-        pop    cx
-        pop    ax
+        jne     JUMPP
+
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
         ret
 UPDATE  ENDP
 
